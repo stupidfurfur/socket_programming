@@ -1,6 +1,5 @@
 package Socket.multiple_client;
 
-
 import java.io.*;  
 import java.net.*;  
 
@@ -21,7 +20,7 @@ public class MyClient {
                         System.out.println("Server has stopped communication.");
                         break;
                     }
-                    System.out.println("Server says: " + str);
+                    System.out.println(str);
                 }
             } catch (IOException e) {
                 e.printStackTrace();

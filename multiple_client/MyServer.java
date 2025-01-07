@@ -7,7 +7,8 @@ import java.util.*;
 
 public class MyServer {
     private static ExecutorService pool = Executors.newFixedThreadPool(10);
-    private static List<DataOutputStream> clientOutputs = Collections.synchronizedList(new ArrayList<>());
+    private static List<ClientHandler> clientHandlers = Collections.synchronizedList(new ArrayList<>());
+    private static int clientIdCounter = 1;  // 用來生成客戶端ID
 
     public static void main(String args[]) throws Exception {  
         ServerSocket ss = new ServerSocket(3333);  
@@ -16,7 +17,7 @@ public class MyServer {
         while (true) {
             Socket clientSocket = ss.accept();  
             System.out.println("Client connected: " + clientSocket.getInetAddress());
-            pool.execute(new ClientHandler(clientSocket)); // 將每個客戶端交給執行緒池處理
+            pool.execute(new ClientHandler(clientSocket, clientIdCounter++)); // 分配 ID 並交給執行緒池處理
         }
     }
 
@@ -24,12 +25,16 @@ public class MyServer {
         private Socket socket;
         private DataInputStream din;
         private DataOutputStream dout;
+        private int clientId;
 
-        public ClientHandler(Socket socket) throws IOException {
+        public ClientHandler(Socket socket, int clientId) throws IOException {
             this.socket = socket;
+            this.clientId = clientId;
             din = new DataInputStream(socket.getInputStream());
             dout = new DataOutputStream(socket.getOutputStream());
-            clientOutputs.add(dout); // 將此客戶端的輸出流添加到列表中
+            clientHandlers.add(this); // 將此客戶端的處理器加入列表
+            dout.writeUTF("Your client ID: " + clientId);  // 向客戶端發送它的 ID
+            dout.flush();
         }
 
         @Override
@@ -37,26 +42,26 @@ public class MyServer {
             try {
                 // 接收消息的執行緒
                 Thread receiveThread = new Thread(() -> {
-                    String str; // 將 str 定義在這裡
+                    String str; 
                     try {
                         while (true) {
                             str = din.readUTF();  // 讀取客戶端消息
                             if (str.equals("stop")) {
-                                System.out.println("Client has stopped communication.");
+                                System.out.println("Client " + clientId + " has stopped communication.");
                                 break;
                             }
-                            System.out.println("Client says: " + str);
+                            System.out.println("Client " + clientId + " says: " + str);
                             // 向所有客戶端發送消息
-                            for (DataOutputStream out : clientOutputs) {
-                                out.writeUTF("Client says: " + str);
-                                out.flush();
+                            for (ClientHandler handler : clientHandlers) {
+                                handler.dout.writeUTF("Client " + clientId + " says: " + str);
+                                handler.dout.flush();
                             }
                         }
                     } catch (IOException e) {
                         e.printStackTrace();
                     } finally {
-                        // 移除此客戶端的輸出流
-                        clientOutputs.remove(dout);
+                        // 移除此客戶端的處理器
+                        clientHandlers.remove(this);
                         try {
                             din.close();
                             dout.close();
@@ -75,16 +80,16 @@ public class MyServer {
                 while (true) {
                     serverInput = consoleReader.readLine();  // 讀取伺服器輸入
                     if (serverInput.equals("stop")) {
-                        for (DataOutputStream out : clientOutputs) {
-                            out.writeUTF("Server is stopping.");
-                            out.flush();
+                        for (ClientHandler handler : clientHandlers) {
+                            handler.dout.writeUTF("Server is stopping.");
+                            handler.dout.flush();
                         }
                         break;
                     }
                     // 將伺服器的輸入發送給所有客戶端
-                    for (DataOutputStream out : clientOutputs) {
-                        out.writeUTF("Server: " + serverInput);
-                        out.flush();
+                    for (ClientHandler handler : clientHandlers) {
+                        handler.dout.writeUTF("Server: " + serverInput);
+                        handler.dout.flush();
                     }
                 }
 
